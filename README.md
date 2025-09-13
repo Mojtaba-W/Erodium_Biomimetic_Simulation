@@ -13,7 +13,7 @@ It visualizes how a hygroscopic twisting actuator with barbed microstructures co
 
 ## How to Run
 1. Download or clone this repository.
-2. Open `index.html` in a modern web browser (Chrome, Firefox, Edge).
+2. Open `erodium_biomimetic_simulation.html` in a modern web browser (Chrome, Firefox, Edge).
 3. Interact with the 3D model (rotate, zoom, etc.).
 
 ## Screenshot
