@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Erodium-Inspired Glioblastoma Penetration — Calibrated Three.js Simulator (v2)</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial,Helvetica,sans-serif;background:#0b1020;color:#dbe7ff}
+    #app{height:100vh;display:flex;flex-direction:row}
+    #canvas-wrap{flex:1;position:relative}
+    canvas{display:block}
+    #ui{width:380px;max-width:45vw;background:linear-gradient(180deg,#071028 0%, #0b1530 100%);padding:16px;box-shadow:inset 0 0 40px rgba(0,0,0,0.6);overflow:auto}
+    h1{font-size:16px;margin:0 0 8px}
+    .section{margin-bottom:12px}
+    label{display:block;font-size:12px;margin-bottom:6px;color:#9fb0ff}
+    input[type=range]{width:100%}
+    input[type=number]{width:100%;padding:6px;border-radius:6px;border:1px solid #18305e;background:#0c1838;color:#dbe7ff}
+    button{background:#1a73e8;border:none;color:white;padding:8px 12px;border-radius:6px;cursor:pointer}
+    button.secondary{background:#163b80}
+    .row{display:flex;gap:8px}
+    .row>div{flex:1}
+    .small{font-size:12px;color:#9fb0ff}
+    footer{position:absolute;right:12px;bottom:8px;color:#8fa9ff;background:transparent}
+    .legend{font-size:12px;color:#9fb0ff;margin-top:8px}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+    .metric{background:#0a1836;border:1px solid #112b5e;border-radius:8px;padding:8px}
+    .metric .v{font-size:18px;font-weight:600;color:#cfe1ff}
+    .metric .k{font-size:11px;color:#8aa2ff}
+  </style>
+  <script type="importmap">
+  {"imports": {"three": "https://unpkg.com/three@0.160.0/build/three.module.js"}}
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div id="canvas-wrap"></div>
+    <div id="ui">
+      <h1>Erodium Seed — Glioblastoma Penetration Simulator (v2)</h1>
+      <p class="small">Conceptual, visually calibrated model of a hygroscopic, helical, barbed micro-actuator penetrating a soft tumor mass. Sliders are mapped to literature-inspired ranges; metrics estimate advance/rotation and drug-trigger radius. This is <strong>not</strong> a medical device or advice.</p>
+
+      <div class="section row">
+        <div>
+          <label>Relative humidity RH (%): <span id="rhLabel">50</span>%</label>
+          <input id="rh" type="range" min="0" max="100" step="1" value="50" />
+        </div>
+        <div>
+          <label>Humidity change rate (ΔRH/s): <span id="drhLabel">0.5</span></label>
+          <input id="drh" type="range" min="0" max="2" step="0.01" value="0.5" />
+        </div>
+      </div>
+
+      <div class="section row">
+        <div>
+          <label>Helical tilt (deg): <span id="tiltLabel">30</span></label>
+          <input id="tilt" type="range" min="5" max="75" value="30" />
+        </div>
+        <div>
+          <label>Pitch (mm): <span id="pitchLabel">4.0</span></label>
+          <input id="pitch" type="range" min="1" max="10" step="0.1" value="4" />
+        </div>
+      </div>
+
+      <div class="section row">
+        <div>
+          <label>Barb density (per mm): <span id="barbLabel">12</span></label>
+          <input id="barb" type="range" min="0" max="40" step="1" value="12" />
+        </div>
+        <div>
+          <label>Barb angle φ (deg): <span id="phiLabel">35</span></label>
+          <input id="phi" type="range" min="0" max="60" step="1" value="35" />
+        </div>
+      </div>
+
+      <div class="section row">
+        <div>
+          <label>Tumor stiffness proxy (0 soft - 1 stiff): <span id="stiffLabel">0.45</span></label>
+          <input id="stiff" type="range" min="0" max="1" step="0.01" value="0.45" />
+        </div>
+        <div>
+          <label>Drug trigger radius R<sub>trig</sub> (mm): <span id="stimLabel">0.20</span></label>
+          <input id="stim" type="range" min="0.05" max="0.60" step="0.01" value="0.20" />
+        </div>
+      </div>
+
+      <div class="section row">
+        <div>
+          <label>Awn length (mm)</label>
+          <input id="awn" type="number" min="10" max="80" step="1" value="60" />
+        </div>
+        <div>
+          <label>Filament radius (mm)</label>
+          <input id="filr" type="number" min="0.2" max="2.5" step="0.1" value="1.8" />
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><div class="v" id="omegaVal">0.80</div><div class="k">Rotation speed (rev/s)</div></div>
+        <div class="metric"><div class="v" id="advanceVal">3.2</div><div class="k">Advance/rotation (mm)</div></div>
+        <div class="metric"><div class="v" id="effVal">0.80</div><div class="k">Penetration efficiency η</div></div>
+        <div class="metric"><div class="v" id="depthVal">0</div><div class="k">Pred. depth (mm)</div></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="startBtn">Start</button>
+        <button class="secondary" id="resetBtn">Reset</button>
+        <button class="secondary" id="dumpBtn">Export PNG</button>
+        <button class="secondary" id="jsonBtn">Export JSON</button>
+      </div>
+
+      <div class="legend">
+        <div><strong>Color legend</strong></div>
+        <div class="small">Tumor particles: blue → healthy; cyan glow → triggered; red → high mechanical stress</div>
+      </div>
+
+      <hr style="border-color:#0f2a5a;margin:12px 0">
+      <div class="small">RH drives coil/uncoil; ΔRH/s controls angular velocity. Barb density & angle increase one-way anchoring and reduce slip; efficiency η ≈ f(barbs, stiffness). Numbers are heuristic, tuned for interactive exploration.</div>
+    </div>
+  </div>
+
+  <footer>Three.js — Erodium seed biomimicry demo for glioblastoma (visual & heuristic only)</footer>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    // DOM refs
+    const canvasWrap = document.getElementById('canvas-wrap');
+    const rh = document.getElementById('rh');
+    const drh = document.getElementById('drh');
+    const tilt = document.getElementById('tilt');
+    const pitch = document.getElementById('pitch');
+    const barb = document.getElementById('barb');
+    const phi = document.getElementById('phi');
+    const stiff = document.getElementById('stiff');
+    const stim = document.getElementById('stim');
+    const awn = document.getElementById('awn');
+    const filr = document.getElementById('filr');
+
+    const rhLabel = document.getElementById('rhLabel');
+    const drhLabel = document.getElementById('drhLabel');
+    const tiltLabel = document.getElementById('tiltLabel');
+    const pitchLabel = document.getElementById('pitchLabel');
+    const barbLabel = document.getElementById('barbLabel');
+    const phiLabel = document.getElementById('phiLabel');
+    const stiffLabel = document.getElementById('stiffLabel');
+    const stimLabel = document.getElementById('stimLabel');
+
+    const omegaVal = document.getElementById('omegaVal');
+    const advanceVal = document.getElementById('advanceVal');
+    const effVal = document.getElementById('effVal');
+    const depthVal = document.getElementById('depthVal');
+
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const dumpBtn = document.getElementById('dumpBtn');
+    const jsonBtn = document.getElementById('jsonBtn');
+
+    // three.js setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x071026, 0.06);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    canvasWrap.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+    camera.position.set(0, 20, 80);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.minDistance = 10;
+    controls.maxDistance = 300;
+
+    const hemi = new THREE.HemisphereLight(0xbfeaff, 0x102033, 0.8);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(30, 50, 10);
+    scene.add(dir);
+
+    // Tumor particle cloud
+    const tumorGroup = new THREE.Group();
+    scene.add(tumorGroup);
+    const tumorRadius = 18;
+    const particleCount = 12000;
+    const positions = new Float32Array(particleCount * 3);
+    const basePositions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    const stress = new Float32Array(particleCount);
+
+    function randomPointInSphere(radius) {
+      const u = Math.random();
+      const v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      const r = radius * Math.cbrt(Math.random());
+      const sinPhi = Math.sin(phi);
+      return [r * sinPhi * Math.cos(theta), r * sinPhi * Math.sin(theta), r * Math.cos(phi)];
+    }
+
+    for (let i = 0; i < particleCount; i++) {
+      const p = randomPointInSphere(tumorRadius);
+      basePositions[i*3+0] = p[0];
+      basePositions[i*3+1] = p[1];
+      basePositions[i*3+2] = p[2];
+      positions[i*3+0] = p[0];
+      positions[i*3+1] = p[1];
+      positions[i*3+2] = p[2];
+      colors[i*3+0] = 0.12; // r
+      colors[i*3+1] = 0.5;  // g
+      colors[i*3+2] = 0.9;  // b
+      sizes[i] = 0.25 + Math.random()*0.6;
+      stress[i] = 0.0;
+    }
+
+    const tumorGeometry = new THREE.BufferGeometry();
+    tumorGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    tumorGeometry.setAttribute('aBase', new THREE.BufferAttribute(basePositions, 3));
+    tumorGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    tumorGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const tumorMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthTest: true,
+      vertexShader: `
+        attribute vec3 color; attribute float size; varying vec3 vColor;
+        void main(){ vColor=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=size*(300.0/-mv.z); gl_Position=projectionMatrix*mv; }
+      `,
+      fragmentShader: `
+        varying vec3 vColor; void main(){ float d=length(gl_PointCoord-vec2(0.5)); if(d>0.5) discard; gl_FragColor=vec4(vColor,1.0);} 
+      `
+    });
+
+    const tumorPoints = new THREE.Points(tumorGeometry, tumorMaterial);
+    tumorGroup.add(tumorPoints);
+
+    // Seed/helical actuator
+    const seedGroup = new THREE.Group();
+    scene.add(seedGroup);
+
+    const helixParams = { length: 60, turns: 6, radius: 1.8 };
+    let helixCurve = buildHelicalCurve(helixParams);
+    let seed = createSeedMesh(helixCurve);
+    seedGroup.add(seed.mesh);
+
+    const headGeom = new THREE.SphereGeometry(1.1, 20, 20);
+    const headMat = new THREE.MeshStandardMaterial({color:0xff4444, emissive:0x330000, roughness:0.3});
+    const head = new THREE.Mesh(headGeom, headMat);
+    seedGroup.add(head);
+    head.position.copy(helixCurve.getPointAt(0));
+
+    // State
+    let clock = new THREE.Clock();
+    let running = false;
+    let progress = 0; // mm-scale proxy along -x
+    let cumDepth = 0; // mm accumulated
+
+    // === Model calibration (heuristic, literature-inspired) ===
+    function calcOmega(RH, dRH){
+      // angular velocity (rev/s) increases with drying and change rate
+      const dryness = (100 - RH)/100; // 0..1
+      const omegaMax = 1.2; // cap for UI stability
+      const alpha = 0.8; // curvature
+      return Math.min(omegaMax, (0.2 + 0.9*dryness**alpha) * (0.3 + 0.7*Math.min(1,dRH/1))); // 0.06..~1.2
+    }
+
+    function slipEfficiency(bPerMm, phiDeg, stiffness){
+      // more barbs & larger backward angle reduce slip; stiffer tissue reduces η
+      const barbTerm = 1 - Math.exp(-0.06 * bPerMm * (1 + Math.tan((phiDeg*Math.PI/180))*0.5));
+      const stiffPenalty = 0.35*stiffness + 0.05; // 0.05..0.40
+      return THREE.MathUtils.clamp(0.5*barbTerm + 0.5*(1 - stiffPenalty), 0.05, 0.98);
+    }
+
+    function advancePerRotation(pitchMM, tiltDeg, eta){
+      // geometric projection with efficiency
+      const proj = pitchMM * Math.cos(tiltDeg*Math.PI/180);
+      return proj * eta; // mm per rotation
+    }
+
+    // Builders
+    function buildHelicalCurve(params){
+      const length = params.length || 60;
+      const turns = params.turns || 6;
+      const radius = params.radius || 1.8;
+      const pts = [];
+      const segs = 200;
+      for(let i=0;i<=segs;i++){
+        const t = i/segs;
+        const x = -length * (1 - t) + 20; // start outside tumor then move -x
+        const angle = turns * t * Math.PI * 2;
+        const y = Math.sin(angle) * radius;
+        const z = Math.cos(angle) * radius;
+        pts.push(new THREE.Vector3(x,y,z));
+      }
+      return new THREE.CatmullRomCurve3(pts);
+    }
+
+    function createSeedMesh(curve){
+      const tubeGeom = new THREE.TubeGeometry(curve, 400, 0.8, 16, false);
+      const mat = new THREE.MeshStandardMaterial({color:0xffcc66, metalness:0.15, roughness:0.35});
+      const tube = new THREE.Mesh(tubeGeom, mat);
+      tube.castShadow = true;
+
+      const barbGroup = new THREE.Group();
+      let barbCount = Math.max(0, parseInt(barb.value, 10));
+      if (barbCount === 1) barbCount = 2;
+      for(let i=0;i<barbCount;i++){
+        const t = barbCount > 1 ? i/(barbCount-1) : 0.5;
+        const pos = curve.getPointAt(t);
+        const tangent = curve.getTangentAt(t).normalize();
+        const barbGeom = new THREE.ConeGeometry(0.18, 0.6, 8);
+        const barbMat = new THREE.MeshStandardMaterial({color:0x5a3b2a, metalness:0.1, roughness:0.6});
+        const c = new THREE.Mesh(barbGeom, barbMat);
+        // rotate by phi relative to tangent
+        const axis = new THREE.Vector3(0,1,0);
+        const q = new THREE.Quaternion().setFromUnitVectors(axis, tangent);
+        const tiltQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), THREE.MathUtils.degToRad(Number(phi.value)));
+        c.quaternion.copy(q.multiply(tiltQuat));
+        c.position.copy(pos.clone().add(tangent.clone().multiplyScalar(0.65)));
+        barbGroup.add(c);
+      }
+
+      const group = new THREE.Group();
+      group.add(tube, barbGroup);
+      return {mesh:group, tube:tube, barbs:barbGroup};
+    }
+
+    function rebuildSeed(){
+      if(seed && seed.mesh) seedGroup.remove(seed.mesh);
+      // map RH to coil radius & turns heuristically (drier → tighter coil, more turns)
+      const RH = Number(rh.value);
+      const dryness = (100 - RH)/100;
+      const turns = Math.round(2 + 6*dryness);
+      const radius = THREE.MathUtils.lerp(2.6, 1.0, dryness); // tighter when dry
+      helixParams.turns = turns;
+      helixParams.radius = Number(filr.value) * (radius/1.8);
+      helixCurve = buildHelicalCurve(helixParams);
+      seed = createSeedMesh(helixCurve);
+      seedGroup.add(seed.mesh);
+      head.position.copy(helixCurve.getPointAt(0));
+    }
+
+    // UI sync
+    function syncUI(){
+      rhLabel.textContent = rh.value;
+      drhLabel.textContent = drh.value;
+      tiltLabel.textContent = tilt.value;
+      pitchLabel.textContent = pitch.value;
+      barbLabel.textContent = barb.value;
+      phiLabel.textContent = phi.value;
+      stiffLabel.textContent = stiff.value;
+      stimLabel.textContent = Number(stim.value).toFixed(2);
+    }
+
+    [rh, drh, tilt, pitch, barb, phi, stiff, stim, awn, filr].forEach(el=>el.addEventListener('input', ()=>{ syncUI(); if(el===rh || el===barb || el===phi || el===filr){ rebuildSeed(); } }));
+
+    // Simulation core
+    function simulateStep(dt){
+      if(!running) return;
+      const RH = Number(rh.value);
+      const dRH = Number(drh.value);
+      const tiltDeg = Number(tilt.value);
+      const pitchMM = Number(pitch.value);
+      const bPerMm = Number(barb.value);
+      const phiDeg = Number(phi.value);
+      const stiffness = Number(stiff.value);
+      const stimR = Number(stim.value);
+
+      const omega = calcOmega(RH, dRH); // rev/s
+      const eta = slipEfficiency(bPerMm, phiDeg, stiffness);
+      const advPerRot = advancePerRotation(pitchMM, tiltDeg, eta); // mm
+
+      // advance rate in mm/s
+      const v = advPerRot * omega;
+      cumDepth += v * dt;
+
+      // update metrics
+      omegaVal.textContent = omega.toFixed(2);
+      advanceVal.textContent = advPerRot.toFixed(2);
+      effVal.textContent = eta.toFixed(2);
+      depthVal.textContent = cumDepth.toFixed(1);
+
+      // Move seed group (scene is in ~mm units)
+      seedGroup.position.x = -cumDepth * 0.45; // visualization scale
+      seedGroup.rotation.x += 2 * Math.PI * omega * dt;
+
+      // update head position in world
+      const headLocal = helixCurve.getPointAt(0);
+      head.position.copy(headLocal);
+      head.position.add(seedGroup.position);
+
+      // sample curve points for interaction
+      const sampleN = 60;
+      const curvePoints = [];
+      for(let i=0;i<sampleN;i++){
+        const t = i/(sampleN-1);
+        const p = helixCurve.getPointAt(t).clone().add(seedGroup.position);
+        curvePoints.push(p);
+      }
+
+      const influence = 1.6 * (1 + (1-eta)); // stronger disturbance when slip is high (ploughing)
+      const posAttr = tumorGeometry.attributes.position.array;
+      const colAttr = tumorGeometry.attributes.color.array;
+
+      for(let i=0;i<particleCount;i++){
+        const px = posAttr[i*3+0];
+        const py = posAttr[i*3+1];
+        const pz = posAttr[i*3+2];
+        let minD2 = 1e9; let closestIdx = 0; let cx=0,cy=0,cz=0;
+        for(let j=0;j<sampleN;j++){
+          const q = curvePoints[j];
+          const dx = px - q.x, dy = py - q.y, dz = pz - q.z; const d2 = dx*dx + dy*dy + dz*dz;
+          if(d2 < minD2){ minD2 = d2; closestIdx=j; cx=q.x; cy=q.y; cz=q.z; }
+        }
+        const dist = Math.sqrt(minD2);
+        if(dist < influence){
+          const nx = (px-cx)/(dist+1e-6), ny=(py-cy)/(dist+1e-6), nz=(pz-cz)/(dist+1e-6);
+          const push = (influence - dist) * 0.12 * (1 - stiffness + 0.1);
+          posAttr[i*3+0] += nx * push;
+          posAttr[i*3+1] += ny * push;
+          posAttr[i*3+2] += nz * push;
+          stress[i] = Math.min(1.0, stress[i] + (influence - dist) * 0.002);
+
+          const hx=head.position.x, hy=head.position.y, hz=head.position.z;
+          const ddx=posAttr[i*3+0]-hx, ddy=posAttr[i*3+1]-hy, ddz=posAttr[i*3+2]-hz;
+          const dHead=Math.sqrt(ddx*ddx+ddy*ddy+ddz*ddz);
+          if(dHead < stimR){ colAttr[i*3+0]=0.0; colAttr[i*3+1]=1.0; colAttr[i*3+2]=1.0; }
+          else {
+            const s=stress[i];
+            colAttr[i*3+0]=0.12*(1-s)+s*0.9;
+            colAttr[i*3+1]=0.5*(1-s)+(1-s)*0.1;
+            colAttr[i*3+2]=0.9*(1-s)+(1-s)*0.2;
+          }
+        } else {
+          const bx = basePositions[i*3+0], by=basePositions[i*3+1], bz=basePositions[i*3+2];
+          posAttr[i*3+0] += (bx - posAttr[i*3+0]) * 0.02;
+          posAttr[i*3+1] += (by - posAttr[i*3+1]) * 0.02;
+          posAttr[i*3+2] += (bz - posAttr[i*3+2]) * 0.02;
+          stress[i] = Math.max(0, stress[i] - 0.002);
+          colAttr[i*3+0] = colAttr[i*3+0] * 0.98 + 0.12 * 0.02;
+          colAttr[i*3+1] = colAttr[i*3+1] * 0.98 + 0.5 * 0.02;
+          colAttr[i*3+2] = colAttr[i*3+2] * 0.98 + 0.9 * 0.02;
+        }
+      }
+
+      tumorGeometry.attributes.position.needsUpdate = true;
+      tumorGeometry.attributes.color.needsUpdate = true;
+    }
+
+    // Controls
+    function resetSimulation(){
+      for(let i=0;i<particleCount;i++){
+        positions[i*3+0] = basePositions[i*3+0];
+        positions[i*3+1] = basePositions[i*3+1];
+        positions[i*3+2] = basePositions[i*3+2];
+        colors[i*3+0] = 0.12; colors[i*3+1] = 0.5; colors[i*3+2] = 0.9;
+        stress[i] = 0.0;
+      }
+      tumorGeometry.attributes.position.needsUpdate = true;
+      tumorGeometry.attributes.color.needsUpdate = true;
+      progress = 0; cumDepth = 0; seedGroup.position.x = 0; seedGroup.rotation.set(0,0,0);
+      running = false; startBtn.textContent = 'Start'; depthVal.textContent = '0';
+    }
+
+    function resize(){
+      const w = Math.max(100, canvasWrap.clientWidth);
+      const h = window.innerHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', resize);
+
+    startBtn.onclick = ()=>{ running = !running; startBtn.textContent = running ? 'Pause' : 'Start'; };
+    resetBtn.onclick = resetSimulation;
+    dumpBtn.onclick = ()=>{ renderer.domElement.toBlob((b)=>{ if(!b) return; const url = URL.createObjectURL(b); const a=document.createElement('a'); a.href=url; a.download='erodium_sim_v2.png'; a.click(); URL.revokeObjectURL(url); }); };
+    jsonBtn.onclick = ()=>{
+      const payload = {
+        RH: Number(rh.value), dRH: Number(drh.value), tilt: Number(tilt.value), pitch: Number(pitch.value), barb: Number(barb.value), phi: Number(phi.value), stiffness: Number(stiff.value), stim: Number(stim.value), awn: Number(awn.value), filamentRadius: Number(filr.value), omega: Number(omegaVal.textContent), advPerRot: Number(advanceVal.textContent), eta: Number(effVal.textContent), depth: Number(depthVal.textContent)
+      };
+      const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='erodium_sim_v2_snapshot.json'; a.click(); URL.revokeObjectURL(url);
+    };
+
+    // init
+    syncUI();
+    resize();
+
+    function animate(){
+      const dt = Math.min(0.06, clock.getDelta());
+      requestAnimationFrame(animate);
+      simulateStep(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // onboarding camera tween
+    (function intro(){
+      const start = performance.now(); const dur = 1500; const from={x:120,y:50,z:120}; const to={x:0,y:20,z:80};
+      function tick(){ const t=Math.min(1,(performance.now()-start)/dur); camera.position.set(from.x*(1-t)+to.x*t, from.y*(1-t)+to.y*t, from.z*(1-t)+to.z*t); camera.lookAt(0,0,0); if(t<1) requestAnimationFrame(tick);} tick();
+    })();
+  </script>
+</body>
+</html>
