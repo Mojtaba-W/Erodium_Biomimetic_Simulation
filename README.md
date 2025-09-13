@@ -17,11 +17,11 @@ It visualizes how a hygroscopic twisting actuator with barbed microstructures co
 3. Interact with the 3D model (rotate, zoom, etc.).
 
 ## Live Demo
-👉 [Click here to view the simulation online](file:///C:/Users/Click/Desktop/erodium_biomimetic_simulation.html)  
-*(GitHub Pages must be enabled in repo settings for this link to work.)*
+👉 (file:///C:/Users/Click/Desktop/erodium_biomimetic_simulation.html)  
+
 
 ## Screenshot
-![Simulation Preview](<img width="1832" height="920" alt="image" src="https://github.com/user-attachments/assets/0efcebd1-a3b9-43af-b86f-01fc49d72ea6" />
+(<img width="1832" height="920" alt="image" src="https://github.com/user-attachments/assets/0efcebd1-a3b9-43af-b86f-01fc49d72ea6" />
 )
 
 ## Author
